@@ -6,7 +6,7 @@ from centerface import CenterFace
 image = cv2.imread("images/demo.jpg")
 h, w = image.shape[:2]
 
-centerface = CenterFace(landmarks=True)
+centerface = CenterFace()
 dets, lms = centerface(image, h, w, threshold=0.35)
 
 for det in dets:

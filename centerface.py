@@ -4,8 +4,7 @@ import onnxruntime as rt
 
 
 class CenterFace(object):
-    def __init__(self, landmarks=True):
-        self.landmarks = landmarks
+    def __init__(self):
         self.sess = rt.InferenceSession("models/centerface.onnx")
         self.img_h_new, self.img_w_new, self.scale_h, self.scale_w = 0, 0, 0, 0
 
@@ -35,52 +34,35 @@ class CenterFace(object):
         return img_h_new, img_w_new, scale_h, scale_w
 
     def postprocess(self, heatmap, lms, offset, scale, threshold):
-        if self.landmarks:
-            dets, lms = self.decode(
-                heatmap,
-                scale,
-                offset,
-                lms,
-                (self.img_h_new, self.img_w_new),
-                threshold=threshold,
-            )
-        else:
-            dets = self.decode(
-                heatmap,
-                scale,
-                offset,
-                None,
-                (self.img_h_new, self.img_w_new),
-                threshold=threshold,
-            )
+        dets, lms = self.decode(
+            heatmap,
+            scale,
+            offset,
+            lms,
+            (self.img_h_new, self.img_w_new),
+            threshold=threshold,
+        )
+
         if len(dets) > 0:
             dets[:, 0:4:2], dets[:, 1:4:2] = (
                 dets[:, 0:4:2] / self.scale_w,
                 dets[:, 1:4:2] / self.scale_h,
             )
-            if self.landmarks:
-                lms[:, 0:10:2], lms[:, 1:10:2] = (
-                    lms[:, 0:10:2] / self.scale_w,
-                    lms[:, 1:10:2] / self.scale_h,
-                )
+            lms[:, 0:10:2], lms[:, 1:10:2] = (
+                lms[:, 0:10:2] / self.scale_w,
+                lms[:, 1:10:2] / self.scale_h,
+            )
         else:
             dets = np.empty(shape=[0, 5], dtype=np.float32)
-            if self.landmarks:
-                lms = np.empty(shape=[0, 10], dtype=np.float32)
-        if self.landmarks:
-            return dets, lms
-        else:
-            return dets
+            lms = np.empty(shape=[0, 10], dtype=np.float32)
+        return dets, lms
 
     def decode(self, heatmap, scale, offset, landmark, size, threshold=0.1):
         heatmap = np.squeeze(heatmap)
         scale0, scale1 = scale[0, 0, :, :], scale[0, 1, :, :]
         offset0, offset1 = offset[0, 0, :, :], offset[0, 1, :, :]
         c0, c1 = np.where(heatmap > threshold)
-        if self.landmarks:
-            boxes, lms = [], []
-        else:
-            boxes = []
+        boxes, lms = [], []
         if len(c0) > 0:
             for i in range(len(c0)):
                 s0, s1 = (
@@ -94,22 +76,17 @@ class CenterFace(object):
                 )
                 x1, y1 = min(x1, size[1]), min(y1, size[0])
                 boxes.append([x1, y1, min(x1 + s1, size[1]), min(y1 + s0, size[0]), s])
-                if self.landmarks:
-                    lm = []
-                    for j in range(5):
-                        lm.append(landmark[0, j * 2 + 1, c0[i], c1[i]] * s1 + x1)
-                        lm.append(landmark[0, j * 2, c0[i], c1[i]] * s0 + y1)
-                    lms.append(lm)
+                lm = []
+                for j in range(5):
+                    lm.append(landmark[0, j * 2 + 1, c0[i], c1[i]] * s1 + x1)
+                    lm.append(landmark[0, j * 2, c0[i], c1[i]] * s0 + y1)
+                lms.append(lm)
             boxes = np.asarray(boxes, dtype=np.float32)
             keep = self.nms(boxes[:, :4], boxes[:, 4], 0.3)
             boxes = boxes[keep, :]
-            if self.landmarks:
-                lms = np.asarray(lms, dtype=np.float32)
-                lms = lms[keep, :]
-        if self.landmarks:
-            return boxes, lms
-        else:
-            return boxes
+            lms = np.asarray(lms, dtype=np.float32)
+            lms = lms[keep, :]
+        return boxes, lms
 
     def nms(self, boxes, scores, nms_thresh):
         x1 = boxes[:, 0]
